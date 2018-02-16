@@ -366,12 +366,6 @@ class Production(ModelWithPrefetchSnooping, Commentable):
 			'B': self.tags_string + ' ' + self.indexed_notes
 		}
 
-	def admin_index_components(self):
-		return {
-			'A': self.asciified_title,
-			'B': self.tags_string + ' ' + self.indexed_notes
-		}
-
 	class Meta:
 		ordering = ['sortable_title']
 		indexes = [

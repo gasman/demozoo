@@ -1,3 +1,5 @@
+import itertools
+
 from django.db import connection
 from django.http import HttpResponse, HttpResponseRedirect
 from django.db.models import Q
@@ -14,6 +16,7 @@ from read_only_mode import writeable_site_required
 from demoscene.models import Nick, Releaser, Membership, ReleaserExternalLink
 from comments.models import Comment
 from janeway.importing import import_author as import_janeway_author
+from janeway.matching import productions_with_missing_janeway_authors
 from janeway.models import Author as JanewayAuthor, Credit as JanewayCredit, Release as JanewayRelease
 from parties.models import Competition, PartyExternalLink, Party, ResultsFile
 from productions.models import Production, Credit, ProductionLink, ProductionBlurb, ProductionType
@@ -1441,6 +1444,36 @@ def janeway_authors_detail(request, demozoo_id, janeway_id):
     })
 
 
+class ProductionsWithMissingJanewayAuthors(Report):
+    title = "Productions with missing authors from Janeway"
+    template_name = 'maintenance/production_report.html'
+    name = 'productions_with_missing_janeway_authors'
+
+    def get_context_data(self, **kwargs):
+        context = super(ProductionsWithMissingJanewayAuthors, self).get_context_data(**kwargs)
+
+        prod_ids_with_missing_authors, all_missing_authors = productions_with_missing_janeway_authors()
+        print(len(prod_ids_with_missing_authors))
+        print(len(all_missing_authors))
+
+        print("prods with missing authors with no dz authors:")
+        print(Production.objects.filter(id__in=prod_ids_with_missing_authors, author_nicks__isnull=True, author_affiliation_nicks__isnull=True).count())
+
+        #productions = (
+        #    Production.objects.filter(id__in=prod_ids_with_missing_authors).defer('notes')
+        #    .extra(
+        #        where=['productions_production.id NOT IN (SELECT record_id FROM maintenance_exclusion WHERE report_name = %s)'],
+        #        params=[self.exclusion_name]
+        #    ).order_by('title')
+        #)
+        productions = Production.objects.all()[:10]
+        context.update({
+            'productions': productions,
+            'mark_excludable': self.request.user.is_staff,
+        })
+        return context
+
+
 class ExternalReport(object):
     # placeholder for an item in the reports menu that doesn't live here
     def __init__(self, url_name, title):
@@ -1469,6 +1502,7 @@ reports = [
             ExternalReport('pouet_groups', "Pouet link matching"),
             ExternalReport('janeway_authors', "Janeway link matching"),
             UniqueAuthorNameMatchesOnJaneway,
+            ProductionsWithMissingJanewayAuthors,
         ]
     ),
     (

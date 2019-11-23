@@ -1,5 +1,7 @@
 from collections import defaultdict
+import itertools
 
+from django.db import connection
 from django.db.models import Q
 
 from demoscene.models import Releaser, ReleaserExternalLink
@@ -150,3 +152,82 @@ def automatch_productions(releaser):
             'unmatched_janeway_production_count': unmatched_janeway_production_count,
         }
     )
+
+
+def productions_with_missing_janeway_authors():
+    """
+    Return a list of production IDs that have Janeway cross-links mentioning authors that aren't
+    represented in the Demozoo entry (typically because there are multiple releasers with the same
+    Janeway ID and the auto-importer didn't know which one to use)
+    """
+    productions = {}
+
+    # productions and the author IDs from their corresponding janeway records
+    cursor = connection.cursor()
+    cursor.execute("""
+        SELECT productions_productionlink.production_id, janeway_author.janeway_id
+        FROM productions_productionlink
+        INNER JOIN janeway_release ON (
+            CAST (productions_productionlink.parameter AS integer) = janeway_release.janeway_id
+        )
+        INNER JOIN janeway_release_author_names ON (
+            janeway_release.id = janeway_release_author_names.release_id
+        )
+        INNER JOIN janeway_name ON (
+            janeway_release_author_names.name_id = janeway_name.id
+        )
+        INNER JOIN janeway_author ON (
+            janeway_name.author_id = janeway_author.id
+        )
+        WHERE productions_productionlink.link_class = 'KestraBitworldRelease'
+        ORDER BY productions_productionlink.production_id
+    """)
+
+    for production_id, rows in itertools.groupby(cursor.fetchall(), lambda row: row[0]):
+        productions[production_id] = {'janeway_authors': set(row[1] for row in rows), 'demozoo_authors': set()}
+
+    production_ids = tuple(productions.keys())
+    if production_ids:
+        # from that list of productions, the janeway IDs of all releasers listed as authors
+        cursor.execute("""
+            SELECT productions_production_author_nicks.production_id, demoscene_releaserexternallink.parameter
+            FROM productions_production_author_nicks
+            INNER JOIN demoscene_nick ON (
+                productions_production_author_nicks.nick_id = demoscene_nick.id
+            )
+            INNER JOIN demoscene_releaserexternallink ON (
+                demoscene_nick.releaser_id = demoscene_releaserexternallink.releaser_id
+                AND demoscene_releaserexternallink.link_class = 'KestraBitworldAuthor'
+            )
+            WHERE productions_production_author_nicks.production_id IN %s
+        """, [production_ids])
+        for production_id, rows in itertools.groupby(cursor.fetchall(), lambda row: row[0]):
+            productions[production_id]['demozoo_authors'].update(int(row[1]) for row in rows)
+
+        # ditto for author affiliations
+        cursor.execute("""
+            SELECT productions_production_author_affiliation_nicks.production_id, demoscene_releaserexternallink.parameter
+            FROM productions_production_author_affiliation_nicks
+            INNER JOIN demoscene_nick ON (
+                productions_production_author_affiliation_nicks.nick_id = demoscene_nick.id
+            )
+            INNER JOIN demoscene_releaserexternallink ON (
+                demoscene_nick.releaser_id = demoscene_releaserexternallink.releaser_id
+                AND demoscene_releaserexternallink.link_class = 'KestraBitworldAuthor'
+            )
+            WHERE productions_production_author_affiliation_nicks.production_id IN %s
+        """, [production_ids])
+        for production_id, rows in itertools.groupby(cursor.fetchall(), lambda row: row[0]):
+            productions[production_id]['demozoo_authors'].update(int(row[1]) for row in rows)
+
+    # IDs of prods where janeway_authors contains IDs not in demozoo_authors
+    prod_ids_with_missing_authors = []
+    all_missing_authors = set()
+
+    for prod_id, authors in productions.items():
+        missing_authors = authors['janeway_authors'] - authors['demozoo_authors']
+        if missing_authors:
+            all_missing_authors.update(missing_authors)
+            prod_ids_with_missing_authors.append(prod_id)
+
+    return prod_ids_with_missing_authors, all_missing_authors

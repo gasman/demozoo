@@ -1,5 +1,6 @@
 from __future__ import absolute_import, unicode_literals
 
+from collections import namedtuple
 from itertools import groupby
 
 from django import template
@@ -8,6 +9,11 @@ from productions.models import Screenshot
 
 
 register = template.Library()
+
+
+ProductionCredit = namedtuple('ProductionCredit', [
+    'production', 'nick', 'roles', 'screenshot',
+])
 
 
 @register.inclusion_tag('shared/credited_production_listing.html')
@@ -59,7 +65,7 @@ def combined_releases(releaser):
     screenshot_map = Screenshot.select_for_production_ids(production_ids)
     # produce final credits struct: (production, nick, [credits], screenshot)
     credits_with_prods_and_screenshots = [
-        (prod, nick, credits, screenshot_map.get(prod.id))
+        ProductionCredit(prod, nick, credits, screenshot_map.get(prod.id))
         for prod, nick, credits in credits_with_prods
     ]
 

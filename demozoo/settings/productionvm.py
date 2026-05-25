@@ -15,7 +15,14 @@ DEFAULT_FROM_EMAIL = "noreply@demozoo.org"
 
 BROKER_URL = "redis://localhost:6379/0"
 
-ALLOWED_HOSTS = ["localhost", "demozoo.org", "www1.demozoo.org", "zxdemo.org", "www2.zxdemo.org"]
+ALLOWED_HOSTS = [
+    "localhost",
+    "demozoo.org",
+    "www4.demozoo.org",
+    "demozoo.wavesitter.com",
+    "zxdemo.org",
+    "www2.zxdemo.org",
+]
 
 # django-compressor offline compression
 COMPRESS_OFFLINE = True
